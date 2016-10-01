@@ -1,0 +1,218 @@
+<!doctype html>
+<html>
+<head>
+    <meta http-equiv="refresh" content="300">
+    <title>SAS Network Monitoring Dashboard</title>      
+    <script type="text/javascript" src="/static/d3.min.js"></script>
+    <script type="text/javascript" src="/static/d3pie.min.js"></script>
+    <script type="text/javascript" src="/static/jquery.min.js"></script>
+    
+    <style>
+        .floater {
+            float: left;
+        }    
+        .extrainfo {
+            display: none;
+        }
+        .container {
+            position: relative;       
+            width: 22%;
+            height: 9em;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .border {
+            border-style: solid;
+            background: #FCFAFA;
+            padding: 5px 40px 5px 40px;
+            box-shadow: rgba(0,0,0,.5) 0px 0px 15px;
+        }
+        .border b {
+            font-size: 160%;
+        }
+    </style>    
+    
+</head>
+<body>
+
+    <!-- For audible alerts -->
+    {% if sound == "true" %}
+        <audio id="soundmade" autoplay="autoplay">  
+            <source src="{{ url_for('static', filename='simpleTone.mp3') }}" />  
+        </audio> 
+    {% endif %}
+    
+    <h1>SAS Network Monitoring Dashboard</h1>
+
+    <!-- This is the div that holds basic resource information -->
+    <div id="toggleContainer" class="container">
+        {% for item in data.Items %}
+            <div id="{{ item.chartID }}" class="floater extrainfo border">
+                <b>Resource Information</b><br><br>
+                FQDN: {{ item.FQDN }}<br>
+                Server Group: {{ item.serverGroup }}<br>
+                Server Group ID: {{ item.serverGroupID }}<br>
+                <a href="https://dev17053.service-now.com/cmdb_ci_list.do?sysparm_query=nameSTARTSWITH{{ item.resourceName }}" target="_blank">ServiceNow</a> 
+            </div>    
+        {% endfor %}
+    </div>
+    
+    <!-- This is the div that holds the donut charts -->
+    <div>
+        {% for key, value in groups.items() %}
+            <div id="{{key}}" class="floater"></div>
+        {% endfor %}
+    </div>
+    
+    <script>
+    var pieHolder = new Array();
+    </script>
+    
+    <!-- Creates the donut charts and fills with pulled resource
+    information from DynamoDB -->
+    {% for key, value in groups.items() %}
+        <script>
+    
+            <!-- Places labels outside of donuts -->
+            var myLabelFormatter = function(context) {
+                return context.label;
+            };    
+            
+            var pie{{key}} = new d3pie("{{key}}", {
+                <!-- Label in the middle of the donuts -->            
+                "header": {
+                    "title": {
+                        "text": "{{value}}",
+                        "fontSize": 24,
+                        "font": "courier"
+                    },
+                    "subtitle": {
+                        "text": "{{key}}",
+                        "color": "#999999",
+                        "fontSize": 0,
+                        "font": "courier"
+                    },
+                    "location": "pie-center",
+                    "titleSubtitlePadding": 10
+                },
+                "footer": {
+                    "color": "#999999",
+                    "fontSize": 10,
+                    "font": "open sans",
+                    "location": "bottom-left"
+                },
+                <!-- Size and placement of the donuts on the screen -->
+                "size": {
+                    "canvasHeight": 500,
+                    "canvasWidth": 750,
+                    "pieInnerRadius": "60%",
+                    "pieOuterRadius": "75%"
+                },
+                <!-- Creates the outside labels and their lines -->       
+                "labels": {
+                    formatter: myLabelFormatter,
+                    "inner": "none",
+                    "mainLabel": {
+                        "fontSize": 15
+                    },
+                    "outer": {
+                        "pieDistance": 12
+                    },
+                    "lines": {
+                        "style": "straight"
+                    }                                     
+                },
+                "data": {
+                    "sortOrder": "none",
+                    "content": [
+                        {% for item in data.Items %} 
+                            {% if item.serverGroupID == key %}
+                                <!-- handles all down/red items per group -->                            
+                                {% if item.outage_status == "down" %}
+                                    {
+                                        "label": "{{ item.resourceName }}",
+                                        "value": 50,
+                                        "color": "#FF0000"
+                                    },
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% for item in data.Items %} 
+                            {% if item.serverGroupID == key %}
+                                <!-- handles all up/green items per group -->
+                                {% if item.outage_status == "up" %}
+                                    {
+                                        "label": "{{ item.resourceName }}",
+                                        "value": 50,
+                                        "color": "#00FF00"
+                                    },
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    ]
+                },
+                "effects": {
+                    <!-- Handles slices being pulled out on click -->
+                    "pullOutSegmentOnClick": {
+                        "effect": "linear",
+                        "speed": 300,
+                        "size": 25
+                    }
+                },
+                "misc": {
+                    "colors": {
+                        "segmentStroke": "#000000"
+                    }
+                },
+                "callbacks": {
+                    onClickSegment: function(a) {        
+                        <!-- Loop to find one that matches the src groups -->
+                        var x = a.segment.farthestViewportElement.textContent;
+                        var str = String(x);
+                        {% for key, value in groups.items() %}
+                            var keyObj = "{{key}}";
+                            var keyString = String(keyObj);
+                            var n = str.search(keyString);
+                            if (n >= 0) {
+                                <!-- toggle div that label+groupvalue -->
+                                str1 = a.data.label;      
+                                str2 = "{{key}}";
+                                var tog = str1.concat(str2);
+                                console.log(tog);
+                                <!-- Cleans resource names -->
+                                var removeDot = tog.replace(/\./g, '');
+                                var removeHyphen = removeDot.replace(/-/g,'');
+                                var removeUnderscore = removeHyphen.replace(/_/g,'');
+                                var removeSpace = removeUnderscore.replace(/ /g,'');
+                                console.log(removeSpace);
+                                
+                                if ($('#'+removeSpace+':visible').length == 1) {
+                                    var test = true;
+                                }
+                                <!-- Toggle resource information on click -->
+                                $("#toggleContainer").children().toggle(false);
+                                $("#"+removeSpace).toggle(!test);        
+                            }
+                        {% endfor %}
+                        
+                        <!-- Attempt to fix the segment displays -->
+                        var idx = 0;
+                        {% for key, value in groups.items() %}
+                            var x = str.search("{{key}}");
+                            if (x >= 0) {
+                                myChart = idx;
+                            } else {
+                                pieHolder[idx].closeSegment();
+                            }
+                            idx++;
+                        {% endfor %}
+                    }
+                }
+            });
+            pieHolder.push(pie{{key}});
+        </script>
+    {% endfor %}
+    
+</body>
+</html>
